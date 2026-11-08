@@ -14,3 +14,5 @@ run_only_in_budget: false
 source_roots: ["src/flask/"]
 exclude_paths: ["tests/", "docs/", "examples/"]
 deploying_team: []               # upstream authors get no commit-level score (section 1.4)
+test_requirements: ["requirements/tests.txt"]   # Flask's own pinned test tools
+test_env_date: commit            # resolve packages as of the tested upstream commit (replayed 2025 history)
