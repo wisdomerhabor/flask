@@ -1,0 +1,16 @@
+# RiskRank settings for this fork of pallets/flask (second deployment pipeline).
+repository: pallets/flask        # the codebase the module model was trained on, so scores are not "transferred"
+budget: 20
+budget_unit: lines
+ranking_key: default
+risk_threshold: 0.5
+models:
+  module: {version: flask-module-v2, sha256: 9f9fe767fcc1c1617c95b839b43dcee7ecf53acf6d4b460f95f6f16b6eb64be5}
+  commit: {version: apachejit-jit-v1, sha256: 519cd8c7f358d4ad5f1b250a26df964ed8d7f93210e9906ddf40161c464a9f44}
+scoring_timeout_seconds: 60
+coverage_refresh_interval: weekly
+stop_at_first_failure: false
+run_only_in_budget: false
+source_roots: ["src/flask/"]
+exclude_paths: ["tests/", "docs/", "examples/"]
+deploying_team: []               # upstream authors get no commit-level score (section 1.4)
