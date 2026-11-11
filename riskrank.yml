@@ -1,0 +1,19 @@
+# RiskRank settings for this fork of pallets/flask (second deployment pipeline).
+repository: pallets/flask        # the codebase the module model was trained on, so scores are not "transferred"
+budget: 20
+budget_unit: lines
+ranking_key: default
+risk_threshold: 0.5
+models:
+  module: {version: flask-module-v3, sha256: fcb0640b2cd23163bf7c5bac389b165ef415d5a7737d9c994ffe37103672f4d9}
+  # no commit model: upstream commits are not scored and build escalation is not configured (section 3.7.8)
+scoring_timeout_seconds: 60
+coverage_refresh_interval: weekly
+stop_at_first_failure: false
+run_only_in_budget: false
+source_roots: ["src/flask/"]
+exclude_paths: ["tests/", "docs/", "examples/"]
+deploying_team: []               # upstream authors get no commit-level score (section 1.4)
+test_requirements: ["requirements/tests.txt"]   # Flask's own pinned test tools
+test_dependency_group: tests     # Flask moved its test tools into pyproject.toml in May 2025
+test_env_date: commit            # resolve packages as of the tested upstream commit (replayed 2025 history)

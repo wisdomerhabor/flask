@@ -1,0 +1,33 @@
+# Batch replay of upstream Flask history into this fork (section 3.7.8). Started by the author with the
+# last upstream commit of each batch; merges it into main and pushes, which triggers the scoring
+# workflow (one push = one plan). Runs no project or test code. A push made with the workflow's own
+# token would not trigger another workflow, so it pushes with REPLAY_TOKEN: a fine-grained token with
+# write access to this fork's contents and workflow files only, stored as a repository secret.
+name: riskrank-replay
+on:
+  workflow_dispatch:
+    inputs:
+      upstream_commit:
+        description: "Last pallets/flask main commit of this batch (full SHA)"
+        required: true
+permissions:
+  contents: read
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: main, fetch-depth: 0, token: "${{ secrets.REPLAY_TOKEN }}"}
+      - name: Merge the batch's last upstream commit into main
+        env: {SHA: "${{ inputs.upstream_commit }}"}
+        run: |
+          [[ "$SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::upstream_commit must be a full 40-character SHA"; exit 1; }
+          git remote add upstream https://github.com/pallets/flask.git
+          git fetch --quiet upstream main
+          git merge-base --is-ancestor "$SHA" upstream/main || { echo "::error::$SHA is not on pallets/flask main"; exit 1; }
+          if git merge-base --is-ancestor "$SHA" HEAD; then echo "::error::$SHA is already in main"; exit 1; fi
+          git config user.name "Wisdom Erhabor"
+          git config user.email "wisdomerhabor2@gmail.com"
+          git merge --no-ff --no-edit -m "sync: merge upstream ${SHA:0:8}" "$SHA"
+          echo "batch: $(git rev-list --count --no-merges HEAD^1..HEAD) upstream commit(s) ending at $SHA" >> "$GITHUB_STEP_SUMMARY"
+          git push origin HEAD:main
