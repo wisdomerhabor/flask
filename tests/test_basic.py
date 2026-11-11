@@ -1,8 +1,8 @@
 import gc
+import importlib.metadata
 import re
 import typing as t
 import uuid
-import warnings
 import weakref
 from contextlib import nullcontext
 from datetime import datetime
@@ -20,6 +20,7 @@ from werkzeug.routing import BuildError
 from werkzeug.routing import RequestRedirect
 
 import flask
+from flask.testing import FlaskClient
 
 require_cpython_gc = pytest.mark.skipif(
     python_implementation() != "CPython",
@@ -67,63 +68,61 @@ def test_method_route_no_methods(app):
         app.get("/", methods=["GET", "POST"])
 
 
-def test_provide_automatic_options_attr():
-    app = flask.Flask(__name__)
+def test_provide_automatic_options_attr_disable(
+    app: flask.Flask, client: FlaskClient
+) -> None:
+    """Automatic options can be disabled by the view func attribute."""
 
     def index():
         return "Hello World!"
 
     index.provide_automatic_options = False
-    app.route("/")(index)
-    rv = app.test_client().open("/", method="OPTIONS")
+    app.add_url_rule("/", view_func=index)
+    rv = client.options()
     assert rv.status_code == 405
 
-    app = flask.Flask(__name__)
 
-    def index2():
+def test_provide_automatic_options_attr_enable(
+    app: flask.Flask, client: FlaskClient
+) -> None:
+    """When default automatic options is disabled in config, it can still be
+    enabled by the view function attribute.
+    """
+    app.config["PROVIDE_AUTOMATIC_OPTIONS"] = False
+
+    def index():
         return "Hello World!"
 
-    index2.provide_automatic_options = True
-    app.route("/", methods=["OPTIONS"])(index2)
-    rv = app.test_client().open("/", method="OPTIONS")
-    assert sorted(rv.allow) == ["OPTIONS"]
+    index.provide_automatic_options = True
+    app.add_url_rule("/", view_func=index)
+    rv = client.options()
+    assert rv.allow == {"GET", "HEAD", "OPTIONS"}
 
 
-def test_provide_automatic_options_kwarg(app, client):
+def test_provide_automatic_options_arg_disable(
+    app: flask.Flask, client: FlaskClient
+) -> None:
+    """Automatic options can be disabled by the route argument."""
+
+    @app.get("/", provide_automatic_options=False)
     def index():
-        return flask.request.method
+        return "Hello World!"
 
-    def more():
-        return flask.request.method
-
-    app.add_url_rule("/", view_func=index, provide_automatic_options=False)
-    app.add_url_rule(
-        "/more",
-        view_func=more,
-        methods=["GET", "POST"],
-        provide_automatic_options=False,
-    )
-    assert client.get("/").data == b"GET"
-
-    rv = client.post("/")
-    assert rv.status_code == 405
-    assert sorted(rv.allow) == ["GET", "HEAD"]
-
-    rv = client.open("/", method="OPTIONS")
+    rv = client.options()
     assert rv.status_code == 405
 
-    rv = client.head("/")
-    assert rv.status_code == 200
-    assert not rv.data  # head truncates
-    assert client.post("/more").data == b"POST"
-    assert client.get("/more").data == b"GET"
 
-    rv = client.delete("/more")
-    assert rv.status_code == 405
-    assert sorted(rv.allow) == ["GET", "HEAD", "POST"]
+def test_provide_automatic_options_method_disable(
+    app: flask.Flask, client: FlaskClient
+) -> None:
+    """Automatic options is ignored if the route handles options."""
 
-    rv = client.open("/more", method="OPTIONS")
-    assert rv.status_code == 405
+    @app.route("/", methods=["OPTIONS"])
+    def index():
+        return "", {"X-Test": "test"}
+
+    rv = client.options()
+    assert rv.headers["X-Test"] == "test"
 
 
 def test_request_dispatching(app, client):
@@ -1491,20 +1490,22 @@ def test_request_locals():
     assert not flask.g
 
 
+werkzeug_3_2 = importlib.metadata.version("werkzeug") >= "3.2."
+
+
 @pytest.mark.parametrize(
-    ("subdomain_matching", "host_matching", "expect_base", "expect_abc", "expect_xyz"),
+    ("subdomain_matching", "host_matching", "expect_subdomain", "expect_host"),
     [
-        (False, False, "default", "default", "default"),
-        (True, False, "default", "abc", "<invalid>"),
-        (False, True, "default", "abc", "default"),
+        (False, False, "default", "default"),
+        (True, False, "abc", "<invalid>"),
+        (False, True, "abc", "default"),
     ],
 )
 def test_server_name_matching(
     subdomain_matching: bool,
     host_matching: bool,
-    expect_base: str,
-    expect_abc: str,
-    expect_xyz: str,
+    expect_subdomain: str,
+    expect_host: str,
 ) -> None:
     app = flask.Flask(
         __name__,
@@ -1522,15 +1523,18 @@ def test_server_name_matching(
     client = app.test_client()
 
     r = client.get(base_url="http://example.test")
-    assert r.text == expect_base
+    assert r.text == "default"
 
     r = client.get(base_url="http://abc.example.test")
-    assert r.text == expect_abc
+    assert r.text == expect_subdomain
 
     with pytest.warns() if subdomain_matching else nullcontext():
         r = client.get(base_url="http://xyz.other.test")
 
-    assert r.text == expect_xyz
+        if werkzeug_3_2:
+            assert r.text == "default"
+        else:
+            assert r.text == expect_host
 
 
 def test_server_name_subdomain():
@@ -1566,12 +1570,12 @@ def test_server_name_subdomain():
     rv = client.get("/", "https://dev.local")
     assert rv.data == b"default"
 
-    # suppress Werkzeug 0.15 warning about name mismatch
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", "Current server name", UserWarning, "flask.app"
-        )
+    with pytest.warns(match="Current server name"):
         rv = client.get("/", "http://foo.localhost")
+
+    if werkzeug_3_2:
+        assert rv.status_code == 200
+    else:
         assert rv.status_code == 404
 
     rv = client.get("/", "http://foo.dev.local")
@@ -1807,13 +1811,13 @@ def test_subdomain_matching_other_name(matching):
     def index():
         return "", 204
 
-    # suppress Werkzeug 0.15 warning about name mismatch
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore", "Current server name", UserWarning, "flask.app"
-        )
-        # ip address can't match name
+    with pytest.warns(match="Current server name") if matching else nullcontext():
+        # ip address can't match name, but will fall back to default
         rv = client.get("/", "http://127.0.0.1:3000/")
+
+    if werkzeug_3_2:
+        assert rv.status_code == 204
+    else:
         assert rv.status_code == 404 if matching else 204
 
     # allow all subdomains if matching is disabled
