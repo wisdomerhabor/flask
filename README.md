@@ -4,7 +4,7 @@
 
 > This fork is the second deployment of RiskRank, an MIT professional master's project. It replays
 > upstream Flask commits through a RiskRank CI pipeline. Privacy notice:
-> https://github.com/wisdomerhabor/riskrank-ci/blob/main/PRIVACY.md
+> https://github.com/wisdomerhabor/riskrank-ci/blob/master/PRIVACY.md
 
 Flask is a lightweight [WSGI] web application framework. It is designed
 to make getting started quick and easy, with the ability to scale up to
