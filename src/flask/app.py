@@ -1684,4 +1684,3 @@ class Flask(App):
         wrapped to apply middleware.
         """
         return self.wsgi_app(environ, start_response)
-# RiskRank demo
